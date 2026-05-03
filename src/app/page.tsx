@@ -1,64 +1,170 @@
-import Image from "next/image";
+/**
+ * HealthBridge Home Page
+ *
+ * Main app container:
+ * - Manages state: messages, insurance plan, symptoms
+ * - Layout: sidebar + chat area
+ * - Handles message sending (calls /api/chat)
+ * - Routes context to child components
+ */
+
+"use client";
+
+import { useState, useCallback } from "react";
+import { Message, ChatRequest, ChatResponse } from "@/types";
+import { ChatInterface } from "@/components/ChatInterface";
+import { InsuranceUpload } from "@/components/InsuranceUpload";
+import { SymptomTracker } from "@/components/SymptomTracker";
 
 export default function Home() {
+  // ========================================================================
+  // STATE MANAGEMENT
+  // ========================================================================
+
+  // Chat messages (user + agent)
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  // Insurance plan text (extracted from PDF)
+  const [planText, setPlanText] = useState<string>();
+
+  // Symptom history (from form)
+  const [symptomHistory, setSymptomHistory] = useState<string>();
+
+  // Loading state (while waiting for agent response)
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Error message (if API call fails)
+  const [error, setError] = useState<string | null>(null);
+
+  // ========================================================================
+  // MESSAGE SENDING
+  // ========================================================================
+
+  /**
+   * Handle sending a message to the agent
+   * 1. Create user message and add to chat
+   * 2. Call POST /api/chat with context
+   * 3. Add agent response to chat
+   * 4. Handle errors
+   */
+  const handleSendMessage = useCallback(
+    async (request: ChatRequest) => {
+      // Prevent duplicate requests
+      if (isLoading) return;
+
+      // Generate unique ID for user message
+      const userMessageId = `msg-${Date.now()}`;
+      const timestamp = new Date().toISOString();
+
+      // Create user message
+      const userMessage: Message = {
+        id: userMessageId,
+        role: "user",
+        content: request.message,
+        timestamp,
+      };
+
+      // Add user message to chat immediately (optimistic update)
+      setMessages((prev) => [...prev, userMessage]);
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        // Call the backend API
+        // POST /api/chat with: message, planText, symptomHistory
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request),
+        });
+
+        // Check if response is OK
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to get response");
+        }
+
+        // Parse agent response
+        const data = (await response.json()) as ChatResponse;
+
+        // Create agent message
+        const agentMessage: Message = {
+          id: `msg-${Date.now()}-agent`,
+          role: "agent",
+          content: data.response,
+          agent: data.agent,
+          timestamp: data.timestamp,
+        };
+
+        // Add agent message to chat
+        setMessages((prev) => [...prev, agentMessage]);
+        setError(null);
+      } catch (err) {
+        // Handle error
+        const errorMessage =
+          err instanceof Error ? err.message : "Unknown error";
+        setError(errorMessage);
+        console.error("Chat error:", err);
+
+        // Add error message to chat
+        const errorMsg: Message = {
+          id: `msg-${Date.now()}-error`,
+          role: "agent",
+          content: `Sorry, I encountered an error: ${errorMessage}`,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [isLoading]
+  );
+
+  // ========================================================================
+  // RENDER
+  // ========================================================================
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+      {/* SIDEBAR */}
+      <aside className="w-80 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+            HealthBridge
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            AI health assistant
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+        {/* Insurance Upload Component */}
+        <InsuranceUpload planText={planText} onPlanExtracted={setPlanText} />
+
+        {/* Symptom Tracker Component */}
+        <SymptomTracker
+          symptomHistory={symptomHistory}
+          onSymptomsSaved={setSymptomHistory}
+        />
+
+        {/* Error alert */}
+        {error && (
+          <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-3">
+            <p className="text-sm text-red-800 dark:text-red-100">{error}</p>
+          </div>
+        )}
+      </aside>
+
+      {/* MAIN CHAT AREA */}
+      <main className="flex-1 flex flex-col bg-white dark:bg-gray-900">
+        <ChatInterface
+          messages={messages}
+          isLoading={isLoading}
+          planText={planText}
+          symptomHistory={symptomHistory}
+          onSendMessage={handleSendMessage}
+        />
       </main>
     </div>
   );
