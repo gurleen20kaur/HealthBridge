@@ -58,18 +58,14 @@ interface OrchestrateResponse {
 
 /**
  * Expected shape of Orchestrate API response
- * This is what the /v1/orchestrate/runs endpoint returns
  */
 interface OrchestrateAPIResponse {
-  output: {
-    answer?: string; // Agent's text response
-    text?: string; // Alternative field name for agent's response
-  };
+  output?: string | { answer?: string; text?: string };
   metadata?: {
-    agent_used?: string; // Which agent processed this
+    agent_used?: string;
     [key: string]: any;
   };
-  [key: string]: any; // Orchestrate responses may have other fields
+  [key: string]: any;
 }
 
 // ============================================================================
@@ -167,16 +163,10 @@ export async function sendMessage(
   if (!baseUrl) {
     throw new Error("WATSONX_BASE_URL is not set in .env.local.");
   }
-  const orchestrateUrl = `${baseUrl}/v1/orchestrate/runs`;
+  const orchestrateUrl = `${baseUrl}/v1/chat`;
 
-  // Request body: Send the prompt to Orchestrate
-  // Note: The exact body format depends on how your Orchestrate instance is configured
-  // This is a standard format that works with most Orchestrate deployments
   const requestBody = {
     input: prompt,
-    // Optional: Specify which agent to route to
-    // If not specified, HealthGuide (supervisor) decides routing
-    agent_name: targetAgent,
   };
 
   // Step 4: Make the HTTP POST request to Orchestrate
@@ -206,20 +196,24 @@ export async function sendMessage(
 
   // Step 6: Parse Orchestrate's response
   const data = (await response.json()) as OrchestrateAPIResponse;
+  console.log("📥 Orchestrate raw response:", JSON.stringify(data).substring(0, 300));
 
-  // Extract the agent's answer from the response
-  // (Orchestrate may return it in 'output.answer' or 'output.text', try both)
-  const agentAnswer = data.output?.answer || data.output?.text || "";
+  // output may be a plain string or an object with answer/text
+  let agentAnswer = "";
+  if (typeof data.output === "string") {
+    agentAnswer = data.output;
+  } else if (typeof data.output === "object" && data.output !== null) {
+    agentAnswer = data.output.answer || data.output.text || "";
+  }
 
   if (!agentAnswer) {
     throw new Error(
-      "Orchestrate returned empty response. Check agent configuration. " +
-        `Full response: ${JSON.stringify(data)}`
+      "Orchestrate returned empty response. Full response: " +
+        JSON.stringify(data)
     );
   }
 
   // Step 7: Determine which agent processed this
-  // Try to extract from metadata, fall back to target agent name
   const agentUsed = data.metadata?.agent_used || targetAgent;
 
   // Step 8: Construct and return the response
