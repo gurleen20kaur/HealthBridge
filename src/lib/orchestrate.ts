@@ -163,8 +163,11 @@ export async function sendMessage(
   console.log(`📤 Sending to ${targetAgent}:\n${prompt.substring(0, 100)}...`);
 
   // Step 3: Prepare the HTTP request to Orchestrate
-  // The API endpoint was set in assumptions: https://us-south.ml.cloud.ibm.com/v1/orchestrate/runs
-  const orchestrateUrl = "https://us-south.ml.cloud.ibm.com/v1/orchestrate/runs";
+  const baseUrl = process.env.WATSONX_BASE_URL;
+  if (!baseUrl) {
+    throw new Error("WATSONX_BASE_URL is not set in .env.local.");
+  }
+  const orchestrateUrl = `${baseUrl}/v1/orchestrate/runs`;
 
   // Request body: Send the prompt to Orchestrate
   // Note: The exact body format depends on how your Orchestrate instance is configured
