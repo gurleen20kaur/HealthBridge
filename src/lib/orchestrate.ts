@@ -163,9 +163,20 @@ export async function sendMessage(
   if (!baseUrl) {
     throw new Error("WATSONX_BASE_URL is not set in .env.local.");
   }
-  const orchestrateUrl = `${baseUrl}/v1/chat`;
+  const instanceId = process.env.WATSONX_INSTANCE_ID;
+  if (!instanceId) {
+    throw new Error("WATSONX_INSTANCE_ID is not set in .env.local.");
+  }
+  const agentId = process.env.WATSONX_AGENT_ID;
+  if (!agentId) {
+    throw new Error("WATSONX_AGENT_ID is not set in .env.local.");
+  }
+
+  const orchestrateUrl = `${baseUrl}/instances/${instanceId}/v1/orchestrate/runs`;
+  console.log("🔗 URL:", orchestrateUrl);
 
   const requestBody = {
+    agent_id: agentId,
     input: prompt,
   };
 
