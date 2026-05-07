@@ -1,65 +1,136 @@
 /**
- * Shared TypeScript types for Phase 3 frontend
- * These types ensure consistency between components and the backend API
+ * Shared TypeScript types for HealthBridge
+ *
+ * Phase 3: Chat-related types (Message, ChatRequest, ChatResponse)
+ * Phase 4: Wellness platform types (UserData, WellnessEntry, Appointment, Medication)
  */
 
-/**
- * A single message in the chat
- * Either from the user or from an agent
- */
+// ============================================================================
+// PHASE 3: Chat types
+// ============================================================================
+
 export interface Message {
-  id: string; // Unique identifier (timestamp + random)
-  role: "user" | "agent"; // Who sent it
-  content: string; // The message text
-  agent?: string; // Which agent sent it (if role === "agent")
-  timestamp: string; // ISO 8601 timestamp
+  id: string;
+  role: "user" | "agent";
+  content: string;
+  agent?: string;
+  timestamp: string;
 }
 
-/**
- * Request body for POST /api/chat
- * What the frontend sends when user submits a message
- */
 export interface ChatRequest {
-  message: string; // The user's message (required)
-  planText?: string; // Insurance plan text (from PDF extraction)
-  healthData?: string; // Health metrics (from CSV extraction)
-  symptomHistory?: string; // Symptom notes (from form input)
-  agent?: string; // Target agent name (optional, default: HealthGuide)
+  message: string;
+  planText?: string;
+  healthData?: string;
+  symptomHistory?: string;
+  agent?: string;
 }
 
-/**
- * Response from POST /api/chat
- * What the backend returns after calling Orchestrate
- */
 export interface ChatResponse {
-  response: string; // Agent's answer
-  agent: string; // Which agent handled it
-  timestamp: string; // ISO 8601 timestamp when response was generated
+  response: string;
+  agent: string;
+  timestamp: string;
 }
 
-/**
- * Error response from API
- * Returned when something goes wrong
- */
 export interface ErrorResponse {
-  error: string; // Human-readable error message
-  code: string; // Machine-readable error code (EMPTY_MESSAGE, ORCHESTRATE_ERROR, etc)
-  timestamp: string; // When the error occurred
+  error: string;
+  code: string;
+  timestamp: string;
+}
+
+// ============================================================================
+// PHASE 4: Wellness platform types
+// ============================================================================
+
+/**
+ * A daily wellness entry
+ * Keyed by date (YYYY-MM-DD) so each day has at most one entry
+ */
+export interface WellnessEntry {
+  date: string; // YYYY-MM-DD (the day this entry is for)
+  mood: number; // 1-5 (sad → happy)
+  energy: number; // 1-10 (drained → energized)
+  feelingNote: string; // "How are you feeling today?" free text
+
+  // Optional fields (progressive disclosure — only shown when user expands)
+  pain?: number; // 0-10 (none → severe)
+  sleepHours?: number; // hours slept last night
+  sleepQuality?: number; // 1-5
+  exerciseMinutes?: number;
+  exerciseType?: string; // "Walking", "Yoga", etc.
+  medicationsTaken?: string[]; // medication IDs taken today
+  dietNotes?: string;
+
+  createdAt: string; // ISO timestamp when first created
+  updatedAt: string; // ISO timestamp of last edit
 }
 
 /**
- * Status of uploaded documents
- * Shows user what files have been uploaded
+ * A scheduled (or past) medical appointment
  */
-export interface DocumentStatus {
-  plan: {
-    uploaded: boolean;
-    fileName?: string;
-    extractedChars?: number; // How many characters were extracted
-  };
-  healthData: {
-    uploaded: boolean;
-    fileName?: string;
-    rows?: number; // How many rows in CSV
-  };
+export interface Appointment {
+  id: string; // unique ID
+  date: string; // ISO datetime
+  doctorName: string;
+  specialty: string; // "Primary Care", "Cardiologist", etc.
+  reason: string; // why this appointment
+  location: string; // clinic/hospital name
+  notes?: string;
+  status: "upcoming" | "completed" | "cancelled";
+}
+
+/**
+ * A medication the user is currently taking
+ */
+export interface Medication {
+  id: string;
+  name: string;
+  dosage: string; // "500mg", "10ml"
+  frequency: string; // "Daily", "Twice daily", "As needed"
+  startDate: string; // YYYY-MM-DD
+  refillDate?: string; // YYYY-MM-DD when to refill
+  notes?: string;
+}
+
+/**
+ * User profile (basic info)
+ */
+export interface UserProfile {
+  name: string;
+  createdAt: string;
+}
+
+/**
+ * Insurance plan info
+ */
+export interface InsurancePlan {
+  text: string; // extracted PDF text
+  fileName: string;
+  uploadedAt: string;
+}
+
+/**
+ * Top-level shape of all user data persisted in localStorage
+ * Single key: "healthbridge:userdata"
+ */
+export interface UserData {
+  profile: UserProfile;
+  wellnessLog: WellnessEntry[];
+  appointments: Appointment[];
+  medications: Medication[];
+  insurancePlan: InsurancePlan | null;
+  chatHistory: Message[];
+  isSeedData: boolean; // true if this is demo seed data, false after user clears
+}
+
+/**
+ * AI suggestion shown on dashboard
+ * Generated dynamically from UserData
+ */
+export interface Suggestion {
+  id: string;
+  icon: string; // emoji
+  title: string;
+  prompt: string; // prefilled prompt sent to chat when clicked
+  agent?: string; // which Orchestrate agent should handle it
+  priority: "high" | "medium" | "low";
 }
