@@ -149,9 +149,12 @@ export async function sendMessage(
     throw new Error("User message cannot be empty");
   }
 
-  // Step 1: Get IAM token from ibm-auth.ts
-  // This returns a cached token if valid, or fetches a new one if expired
-  console.log("📋 Getting IAM token...");
+  const apiKey = process.env.WATSONX_API_KEY;
+  if (!apiKey) throw new Error("WATSONX_API_KEY is not set in .env.local.");
+
+  // Get IAM token as fallback — IBM Orchestrate REST API prefers the raw API
+  // key header ("apikey <key>") which bypasses the JWT PEM kid validation error.
+  console.log("📋 Getting IAM token (fallback)...");
   const token = await getIAMToken();
 
   // Step 2: Construct the full prompt by injecting context
@@ -166,16 +169,22 @@ export async function sendMessage(
   // Endpoint: POST {baseUrl}/api/v1/orchestrate/{agentId}/chat/completions
   // - agentId goes in the URL path, not the body
   // - No instanceId needed
-  const baseUrl = process.env.WATSONX_BASE_URL;
-  if (!baseUrl) {
-    throw new Error("WATSONX_BASE_URL is not set in .env.local.");
-  }
   const agentId = process.env.WATSONX_AGENT_ID;
   if (!agentId) {
     throw new Error("WATSONX_AGENT_ID is not set in .env.local.");
   }
 
-  const orchestrateUrl = `${baseUrl}/api/v1/orchestrate/${agentId}/chat/completions`;
+  // Use the same host as the embed widget — the REST API lives on the same domain.
+  // WATSONX_BASE_URL may have an "api." prefix that doesn't apply here; we
+  // fall back to the known embed hostURL for the ca-tor region.
+  const rawBase = process.env.WATSONX_BASE_URL ?? "";
+  const hostUrl = rawBase
+    .replace(/^https?:\/\/api\./, "https://")   // strip "api." subdomain if present
+    .replace(/\/+$/, "");                        // strip trailing slash
+
+  const orchestrateUrl = hostUrl
+    ? `${hostUrl}/api/v1/orchestrate/${agentId}/chat/completions`
+    : `https://ca-tor.watson-orchestrate.cloud.ibm.com/api/v1/orchestrate/${agentId}/chat/completions`;
   console.log("🔗 URL:", orchestrateUrl);
 
   // IBM uses OpenAI-compatible chat completions format.
@@ -198,8 +207,9 @@ export async function sendMessage(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`, // ← Using the IAM token for auth
-      // ↑ This is the token we got from IBM's auth server (via getIAMToken)
+      // IBM Orchestrate REST API accepts the raw API key directly — this avoids
+      // the "WXO_PEM - kid not found" JWT validation error from using IAM tokens.
+      Authorization: `apikey ${apiKey}`,
     },
     body: JSON.stringify(requestBody),
   });

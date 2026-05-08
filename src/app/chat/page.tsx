@@ -1,21 +1,3 @@
-/**
- * /chat — AI chat page
- *
- * - Reads URL params (?prompt=...&agent=...) for prefilled prompts from dashboard
- * - Pulls full UserData and uses buildChatRequest() to inject context on every send
- * - Persists messages to userData.chatHistory
- * - SuggestionChips above the input, ContextSidebar on the right
- *
- * Layout:
- *   ┌────────────────────┐ ┌──────────────┐
- *   │ Messages           │ │ Context      │
- *   │ ...                │ │ Sidebar      │
- *   │                    │ │              │
- *   │ [Chips]            │ │              │
- *   │ [Input]   [Send]   │ │              │
- *   └────────────────────┘ └──────────────┘
- */
-
 "use client";
 
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
@@ -39,12 +21,10 @@ function ChatPageContent() {
 
   const messages = userData?.chatHistory ?? [];
 
-  // Auto-scroll on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  // Handle URL param prompt (from dashboard suggestion clicks)
   useEffect(() => {
     if (handledUrlParam.current || isLoading || !userData) return;
     const promptParam = searchParams.get("prompt");
@@ -61,7 +41,6 @@ function ChatPageContent() {
 
       const targetAgent = searchParams.get("agent") ?? undefined;
 
-      // Optimistic user message
       const userMsg: Message = {
         id: `msg-${Date.now()}`,
         role: "user",
@@ -140,8 +119,14 @@ function ChatPageContent() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-800">💬 Chat with HealthBridge AI</h1>
-          <p className="text-slate-500 mt-1">
+          <p className="text-slate-500 mt-1 flex items-center gap-2">
             Personalized to your plan, wellness, and history.
+            <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-medium">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none"/>
+              </svg>
+              IBM watsonx Orchestrate
+            </span>
           </p>
         </div>
         {messages.length > 0 && (
@@ -157,7 +142,6 @@ function ChatPageContent() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chat area */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-md flex flex-col" style={{ minHeight: "70vh" }}>
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto p-6">
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center text-slate-400 py-12">
@@ -177,7 +161,10 @@ function ChatPageContent() {
                 ))}
                 {isSending && (
                   <div className="flex justify-start mb-4">
-                    <div className="bg-slate-100 rounded-2xl px-4 py-2">
+                    <div className="bg-slate-100 rounded-2xl px-4 py-3">
+                      <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
+                        <span>IBM watsonx Orchestrate</span>
+                      </div>
                       <div className="flex gap-2">
                         <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
                         <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-100" />
@@ -191,19 +178,17 @@ function ChatPageContent() {
             )}
           </div>
 
-          {/* Input area with chips */}
           <div className="border-t border-slate-100 p-4 space-y-3">
             <SuggestionChips
               userData={userData}
               onSelect={(prompt) => setInputValue(prompt)}
               disabled={isSending}
             />
-
             <div className="flex gap-2">
               <textarea
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyPress}
                 placeholder="Ask about your health, plan, symptoms..."
                 disabled={isSending}
                 rows={2}
@@ -218,7 +203,7 @@ function ChatPageContent() {
               </button>
             </div>
             <p className="text-xs text-slate-400">
-              Press Enter to send, Shift+Enter for new line
+              Press Enter to send · Shift+Enter for new line
             </p>
             {error && (
               <p className="text-xs text-red-600 bg-red-50 p-2 rounded-lg">{error}</p>

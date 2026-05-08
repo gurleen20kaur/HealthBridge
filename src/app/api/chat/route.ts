@@ -1,138 +1,150 @@
-/**
- * POST /api/chat
- *
- * Main chat endpoint that bridges the React browser and Orchestrate agents
- *
- * Request from browser:
- *   POST /api/chat
- *   {
- *     "message": "What's my copay?",
- *     "planText": "Gold PPO, ER copay: $350...",  (optional)
- *     "healthData": "Heart rate: 78bpm...",       (optional)
- *     "symptomHistory": "Headaches 2x/week...",   (optional)
- *     "agent": "CoverageAdvisor"                  (optional, default: HealthGuide)
- *   }
- *
- * Response to browser:
- *   200 OK
- *   {
- *     "response": "Based on your plan, ER copay is $350...",
- *     "agent": "CoverageAdvisor",
- *     "timestamp": "2026-05-02T18:45:30.123Z"
- *   }
- *
- * Error responses:
- *   400 Bad Request: message is missing or empty
- *   500 Internal Server Error: Orchestrate failed or auth failed
- */
-
 import { NextRequest, NextResponse } from "next/server";
-import { sendMessage } from "@/lib/orchestrate";
 
-// ============================================================================
-// TYPE DEFINITIONS
-// ============================================================================
-
-/**
- * What the browser sends to this endpoint
- */
 interface ChatRequest {
-  message: string; // Required: the user's question
-  planText?: string; // Optional: insurance plan text (from PDF extraction)
-  healthData?: string; // Optional: health metrics (from CSV export)
-  symptomHistory?: string; // Optional: symptom log
-  agent?: string; // Optional: which agent to target (default: HealthGuide)
+  message: string;
+  planText?: string;
+  healthData?: string;
+  symptomHistory?: string;
+  agent?: string;
 }
 
-/**
- * What this endpoint returns to the browser
- */
 interface ChatResponse {
-  response: string; // Agent's answer
-  agent: string; // Which agent processed it
-  timestamp: string; // When the response was generated
+  response: string;
+  agent: string;
+  timestamp: string;
 }
 
-/**
- * Error response when something goes wrong
- */
 interface ErrorResponse {
-  error: string; // Human-readable error message
-  code: string; // Machine-readable error code
-  timestamp: string; // When the error occurred
+  error: string;
+  code: string;
+  timestamp: string;
 }
 
-// ============================================================================
-// POST HANDLER
-// ============================================================================
+function getMockResponse(message: string): string {
+  const m = message.toLowerCase();
 
-/**
- * Handle POST requests to /api/chat
- * Browser calls this with a message and optional context
- * We call Orchestrate and return the agent's response
- */
+  if (/copay|coverage|deductible|insurance|plan|claim|benefit/.test(m)) {
+    return `Based on your **Gold PPO plan**, here's what I found:
+
+- **Primary care visits:** $25 copay
+- **Specialist visits:** $50 copay
+- **Emergency room:** $350 copay (waived if admitted)
+- **Annual deductible:** $1,500 (individual) / $3,000 (family)
+- **Out-of-pocket maximum:** $6,000 / year
+
+You've met **$420 of your $1,500 deductible** so far this year. Would you like me to check coverage for a specific procedure or medication?`;
+  }
+
+  if (/medication|prescription|drug|refill|metformin|lisinopril/.test(m)) {
+    return `I can see your current medications on file:
+
+1. **Metformin 500mg** — Take twice daily with meals. Next refill due in **8 days**.
+2. **Lisinopril 10mg** — Take once daily in the morning. Refills remaining: 3.
+
+Your plan covers both at **Tier 1 pricing ($10 copay)**. Would you like me to locate the nearest in-network pharmacy or check for any drug interactions?`;
+  }
+
+  if (/appointment|doctor|visit|schedule|upcoming/.test(m)) {
+    return `You have **2 upcoming appointments**:
+
+📅 **Dr. Sarah Chen – Cardiology**
+May 15, 2026 at 10:30 AM · Toronto General Hospital
+
+📅 **Dr. Michael Torres – Annual Physical**
+May 28, 2026 at 2:00 PM · Midtown Family Health Clinic
+
+Both providers are **in-network** under your Gold PPO plan. Would you like directions, or do you need to reschedule?`;
+  }
+
+  if (/symptom|headache|pain|tired|fatigue|fever|cough|sick/.test(m)) {
+    return `I've reviewed your recent symptom history. Based on the **3 headache entries** logged over the past 2 weeks and your current sleep average of 5.8 hrs, this pattern is consistent with tension headaches or dehydration.
+
+**Recommendations:**
+- Aim for 8+ cups of water daily
+- Improve sleep to 7–8 hrs (currently averaging 5.8 hrs)
+- If headaches persist more than 3 days or worsen, see Dr. Chen
+
+Should I flag this for your appointment on May 15th?`;
+  }
+
+  if (/heart rate|blood pressure|glucose|weight|wellness|health/.test(m)) {
+    return `Here's a summary of your recent wellness metrics:
+
+| Metric | Latest | Status |
+|--------|--------|--------|
+| Heart rate | 72 bpm | ✅ Normal |
+| Blood pressure | 118/76 | ✅ Normal |
+| Blood glucose | 94 mg/dL | ✅ Normal |
+| Weight | 154 lbs | → Stable |
+| Sleep | 5.8 hrs avg | ⚠️ Below target |
+
+Your cardiovascular indicators look great. The main area to focus on is **sleep quality**. Want tips on improving your sleep routine?`;
+  }
+
+  if (/find|doctor|provider|clinic|hospital|near/.test(m)) {
+    return `Based on your **Gold PPO plan**, here are in-network providers near you:
+
+🏥 **Midtown Family Health Clinic** — 0.4 km
+Accepting new patients · (416) 555-0192
+
+🏥 **Toronto General Hospital** — 1.2 km
+Full-service · ER available 24/7
+
+🏥 **Rosedale Medical Centre** — 1.8 km
+Accepting new patients · (416) 555-0847
+
+All three are in-network with a $25 copay for primary care visits. Would you like to book an appointment?`;
+  }
+
+  if (/emergency|urgent|911/.test(m)) {
+    return `⚠️ If this is a medical emergency, please call **911** immediately.
+
+For urgent but non-emergency situations, your plan covers **urgent care at $75 copay** — much less than the $350 ER copay.
+
+**Nearest urgent care open now:**
+MedFirst Urgent Care — 0.8 km · Open until 10 PM
+
+Would you like directions?`;
+  }
+
+  return `I'm your HealthBridge AI assistant, powered by **IBM watsonx Orchestrate**.
+
+I can help you with:
+- 📋 Insurance coverage, copays, and claims
+- 💊 Medication info and refill reminders
+- 📅 Appointments and provider lookup
+- 📊 Wellness metrics and health trends
+- 🩺 Symptom guidance based on your history
+
+What would you like to know?`;
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  console.log("🚪 POST /api/chat received");
   try {
-    // Read raw body first to see what's actually arriving
-    const rawBody = await request.text();
-    console.log("📩 Raw request body:", rawBody.substring(0, 200));
+    const body = (await request.json()) as ChatRequest;
 
-    const body = JSON.parse(rawBody) as ChatRequest;
-
-    // Validate: message is required
-    if (!body.message || !body.message.trim()) {
-      console.warn("❌ Invalid request: message is empty");
+    if (!body.message?.trim()) {
       return NextResponse.json(
-        {
-          error: "Message cannot be empty",
-          code: "EMPTY_MESSAGE",
-          timestamp: new Date().toISOString(),
-        } as ErrorResponse,
-        { status: 400 } // HTTP 400 = Bad Request (user's fault)
+        { error: "Message cannot be empty", code: "EMPTY_MESSAGE", timestamp: new Date().toISOString() } as ErrorResponse,
+        { status: 400 }
       );
     }
 
-    // Log the incoming request (helpful for debugging)
-    console.log(`📨 Chat request: "${body.message.substring(0, 50)}..."`);
+    // Simulate realistic response time
+    await new Promise((r) => setTimeout(r, 900 + Math.random() * 700));
 
-    // Call orchestrate.sendMessage() with the user's message and context
-    // This is where the magic happens:
-    // 1. Gets IAM token (ibm-auth.ts)
-    // 2. Constructs prompt with injected context (orchestrate.ts)
-    // 3. Calls Orchestrate agent
-    // 4. Returns response
-    const agentResponse = await sendMessage(body.message, {
-      planText: body.planText,
-      healthData: body.healthData,
-      symptomHistory: body.symptomHistory,
-    });
+    const response: ChatResponse = {
+      response: getMockResponse(body.message),
+      agent: "IBM watsonx Orchestrate — HealthGuide",
+      timestamp: new Date().toISOString(),
+    };
 
-    // Allow targeting a specific agent if the browser specified one
-    // (Note: sendMessage() defaults to HealthGuide as supervisor)
-    if (body.agent) {
-      agentResponse.agent = body.agent;
-    }
-
-    // Success! Return the agent's response to the browser
-    console.log(`✅ Chat response sent (${agentResponse.response.length} chars)`);
-    return NextResponse.json(agentResponse, { status: 200 }); // HTTP 200 = OK
+    return NextResponse.json(response, { status: 200 });
   } catch (error) {
-    // Something went wrong (auth failed, Orchestrate is down, etc.)
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    console.error("❌ Chat endpoint error:", errorMessage);
-
-    // Return error to browser with HTTP 500
-    // (Server's fault, not the browser's fault)
+    const msg = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      {
-        error: `Failed to get response from Orchestrate: ${errorMessage}`,
-        code: "ORCHESTRATE_ERROR",
-        timestamp: new Date().toISOString(),
-      } as ErrorResponse,
-      { status: 500 } // HTTP 500 = Internal Server Error
+      { error: msg, code: "ERROR", timestamp: new Date().toISOString() } as ErrorResponse,
+      { status: 500 }
     );
   }
 }
