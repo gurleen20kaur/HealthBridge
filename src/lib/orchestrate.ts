@@ -58,18 +58,18 @@ interface OrchestrateResponse {
 
 /**
  * Expected shape of Orchestrate API response
- * This is what the /v1/orchestrate/runs endpoint returns
  */
+// OpenAI-compatible response from IBM Orchestrate chat/completions
 interface OrchestrateAPIResponse {
-  output: {
-    answer?: string; // Agent's text response
-    text?: string; // Alternative field name for agent's response
-  };
-  metadata?: {
-    agent_used?: string; // Which agent processed this
-    [key: string]: any;
-  };
-  [key: string]: any; // Orchestrate responses may have other fields
+  choices?: Array<{
+    message?: {
+      role?: string;
+      content?: string;
+    };
+  }>;
+  model?: string;
+  thread_id?: string;
+  [key: string]: any;
 }
 
 // ============================================================================
@@ -163,20 +163,33 @@ export async function sendMessage(
   console.log(`📤 Sending to ${targetAgent}:\n${prompt.substring(0, 100)}...`);
 
   // Step 3: Prepare the HTTP request to Orchestrate
+  // Endpoint: POST {baseUrl}/api/v1/orchestrate/{agentId}/chat/completions
+  // - agentId goes in the URL path, not the body
+  // - No instanceId needed
   const baseUrl = process.env.WATSONX_BASE_URL;
   if (!baseUrl) {
     throw new Error("WATSONX_BASE_URL is not set in .env.local.");
   }
-  const orchestrateUrl = `${baseUrl}/v1/orchestrate/runs`;
+  const agentId = process.env.WATSONX_AGENT_ID;
+  if (!agentId) {
+    throw new Error("WATSONX_AGENT_ID is not set in .env.local.");
+  }
 
-  // Request body: Send the prompt to Orchestrate
-  // Note: The exact body format depends on how your Orchestrate instance is configured
-  // This is a standard format that works with most Orchestrate deployments
+  const orchestrateUrl = `${baseUrl}/api/v1/orchestrate/${agentId}/chat/completions`;
+  console.log("🔗 URL:", orchestrateUrl);
+
+  // IBM uses OpenAI-compatible chat completions format.
+  // stream: false so we get a single JSON response, not a streaming SSE stream.
+  // Truncate prompt to 4000 chars to avoid IBM context limits.
+  const truncatedPrompt = prompt.length > 4000
+    ? prompt.substring(0, 4000) + "\n\n[Context truncated for length]"
+    : prompt;
+
   const requestBody = {
-    input: prompt,
-    // Optional: Specify which agent to route to
-    // If not specified, HealthGuide (supervisor) decides routing
-    agent_name: targetAgent,
+    messages: [{ role: "user", content: truncatedPrompt }],
+    stream: false,
+    additional_parameters: {},
+    context: {},
   };
 
   // Step 4: Make the HTTP POST request to Orchestrate
@@ -205,22 +218,29 @@ export async function sendMessage(
   }
 
   // Step 6: Parse Orchestrate's response
-  const data = (await response.json()) as OrchestrateAPIResponse;
+  // Read raw text first so we can log it if JSON parsing fails
+  const rawText = await response.text();
+  console.log("📥 IBM raw response:", rawText.substring(0, 500));
 
-  // Extract the agent's answer from the response
-  // (Orchestrate may return it in 'output.answer' or 'output.text', try both)
-  const agentAnswer = data.output?.answer || data.output?.text || "";
+  let data: OrchestrateAPIResponse;
+  try {
+    data = JSON.parse(rawText) as OrchestrateAPIResponse;
+  } catch {
+    throw new Error(`IBM returned non-JSON response: ${rawText.substring(0, 300)}`);
+  }
+
+  // IBM returns OpenAI-compatible format: choices[0].message.content
+  const agentAnswer = data.choices?.[0]?.message?.content ?? "";
 
   if (!agentAnswer) {
     throw new Error(
-      "Orchestrate returned empty response. Check agent configuration. " +
-        `Full response: ${JSON.stringify(data)}`
+      "Orchestrate returned empty response. Full response: " +
+        JSON.stringify(data)
     );
   }
 
   // Step 7: Determine which agent processed this
-  // Try to extract from metadata, fall back to target agent name
-  const agentUsed = data.metadata?.agent_used || targetAgent;
+  const agentUsed = data.model || targetAgent;
 
   // Step 8: Construct and return the response
   const result: OrchestrateResponse = {
