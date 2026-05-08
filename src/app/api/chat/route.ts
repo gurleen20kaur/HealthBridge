@@ -72,10 +72,13 @@ interface ErrorResponse {
  * We call Orchestrate and return the agent's response
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  console.log("🚪 POST /api/chat received");
   try {
-    // Parse the request body
-    // request.json() reads the JSON from the request body
-    const body = (await request.json()) as ChatRequest;
+    // Read raw body first to see what's actually arriving
+    const rawBody = await request.text();
+    console.log("📩 Raw request body:", rawBody.substring(0, 200));
+
+    const body = JSON.parse(rawBody) as ChatRequest;
 
     // Validate: message is required
     if (!body.message || !body.message.trim()) {
